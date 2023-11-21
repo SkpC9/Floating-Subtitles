@@ -1,4 +1,6 @@
 ﻿#include <spdlog/sinks/basic_file_sink.h>
+
+#include "Hook.h"
 #include "Settings.h"
 
 namespace logger = SKSE::log;
@@ -24,6 +26,7 @@ class MyEventSink : public RE::BSTEventSink<RE::InputEvent *> {
     MyEventSink &operator=(MyEventSink &&) = delete;
 
     int inikeycode = Settings::GetSingleton()->GetKeyCode();
+    float distance_threshold = Settings::GetSingleton()->GetDistanceThreshold();
 
 public:
     static MyEventSink *GetSingleton() {
@@ -45,18 +48,24 @@ public:
             // 184 rAlt
             if (dxScanCode == inikeycode && button_event->IsDown()) {
                 auto subtitle_manager = RE::SubtitleManager::GetSingleton();
-                //logger::info("current subtitles size: {}",subtitle_manager->subtitles.size());
+                // logger::info("current subtitles size: {}",subtitle_manager->subtitles.size());
+                if (!subtitle_manager) {
+                    logger::info("SubtitleManager null!");
+                    return RE::BSEventNotifyControl::kContinue;
+                }
+                std::string temptexts = ": ";
                 for (int i = 0; i < subtitle_manager->subtitles.size(); i++) {
+                    // logger::info("index/subtitle size is: {}/{}", i, subtitle_manager->subtitles.size());
                     auto subtitle_info = subtitle_manager->subtitles[i];
-                    //logger::info("{} speaks: {}", subtitle_info.speaker.get()->GetName(), subtitle_info.subtitle);
-                    //RE::ConsoleLog::GetSingleton()->Print("{} speaks: {}", subtitle_info.speaker.get()->GetName(),
-                    //                                      subtitle_info.subtitle);
-                    std::string temptexts = ": ";
-                    std::string current_line =
-                        subtitle_info.speaker.get()->GetName() + temptexts + subtitle_info.subtitle.c_str();
-                    //logger::info("{}",current_line);
-                    RE::ConsoleLog::GetSingleton()->Print(current_line.c_str());
-                    RE::DebugNotification(current_line.c_str());
+                    // 需要考虑设置里关闭字幕的情况，防止闪退
+                    if (subtitle_info.speaker) {
+                        if (subtitle_info.targetDistance < distance_threshold) {
+                            std::string current_line =
+                                subtitle_info.speaker.get()->GetName() + temptexts + subtitle_info.subtitle.c_str();
+                            RE::ConsoleLog::GetSingleton()->Print(current_line.c_str());
+                            RE::DebugNotification(current_line.c_str());
+                        }
+                    }
                 }
             }
         }
@@ -78,6 +87,8 @@ SKSEPluginLoad(const SKSE::LoadInterface *skse) {
     // be printed to
     SKSE::GetMessagingInterface()->RegisterListener(OnMessage);
     logger::info("Message Listener Registered");
+
+    FloatingSubtitles::PlayerCharacterEx::InstallHook();
 
     return true;
 }
